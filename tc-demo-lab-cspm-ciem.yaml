@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Qualys TotalCloud demo lab - intentionally weak CSPM/CIEM resources. Use only in a sandbox account."
+
+Parameters:
+  DemoName:
+    Type: String
+    Default: qualys-tc-demo
+    AllowedPattern: "^[a-z0-9-]{3,24}$"
+    Description: Lowercase prefix for demo resource names.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select your default VPC or a disposable demo VPC.
+
+Resources:
+  DemoPublicBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${DemoName}-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Purpose
+          Value: QualysTotalCloudDemo
+        - Key: Warning
+          Value: IntentionallyWeakNoSensitiveData
+
+  DemoPublicBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DemoPublicBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadForDemoOnly
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "${DemoPublicBucket.Arn}/*"
+
+  DemoOpenSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Qualys TC demo SG - intentionally open inbound management ports"
+      GroupName: !Sub "${DemoName}-open-management-sg"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: "DEMO WEAKNESS - SSH open to the internet"
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: 0.0.0.0/0
+          Description: "DEMO WEAKNESS - RDP open to the internet"
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: "Demo public HTTP"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Default unrestricted outbound"
+      Tags:
+        - Key: Purpose
+          Value: QualysTotalCloudDemo
+        - Key: Warning
+          Value: IntentionallyWeakNoSensitiveData
+
+  DemoOverPrivilegedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DemoName}-overprivileged-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      Tags:
+        - Key: Purpose
+          Value: QualysTotalCloudDemo
+        - Key: Warning
+          Value: IntentionallyOverPrivileged
+
+Outputs:
+  DemoPublicBucket:
+    Description: Intentionally public demo bucket name. Do not upload sensitive data.
+    Value: !Ref DemoPublicBucket
+
+  DemoOpenSecurityGroup:
+    Description: Security group with intentionally open inbound ports.
+    Value: !Ref DemoOpenSecurityGroup
+
+  DemoOverPrivilegedRole:
+    Description: IAM role intentionally attached to AdministratorAccess for CIEM demo.
+    Value: !GetAtt DemoOverPrivilegedRole.Arn
+

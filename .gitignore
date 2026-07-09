@@ -1,0 +1,4 @@
+.venv-qiac/
+*.log
+scan_response_*.json
+__pycache__/

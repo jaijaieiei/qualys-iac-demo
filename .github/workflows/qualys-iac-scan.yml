@@ -1,0 +1,32 @@
+name: Qualys IaC Scan
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.yaml"
+      - "**/*.yml"
+      - "**/*.json"
+      - "**/*.tf"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  qualys-iac-scan:
+    runs-on: ubuntu-latest
+    name: Qualys IaC Scan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Scan IaC templates with Qualys
+        uses: Qualys/github_action_qiac@main
+        env:
+          URL: ${{ secrets.QUALYS_URL }}
+          UNAME: ${{ secrets.QUALYS_USERNAME }}
+          PASS: ${{ secrets.QUALYS_PASSWORD }}

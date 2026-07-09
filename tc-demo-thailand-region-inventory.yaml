@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Qualys TotalCloud Thailand region inventory test - region-scoped low/no-cost resources."
+
+Parameters:
+  DemoName:
+    Type: String
+    Default: qualys-tc-th
+    AllowedPattern: "^[a-z0-9-]{3,24}$"
+    Description: Lowercase prefix for Thailand region demo resource names.
+
+Resources:
+  ThailandDemoVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.77.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DemoName}-vpc"
+        - Key: Purpose
+          Value: QualysTotalCloudThailandRegionDemo
+        - Key: DemoMode
+          Value: ThailandRegionInventoryOnly
+
+  ThailandOpenSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Qualys TC Thailand demo SG - intentionally open management ports. No EC2 attached."
+      GroupName: !Sub "${DemoName}-open-management-sg"
+      VpcId: !Ref ThailandDemoVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: "DEMO WEAKNESS - SSH open to the internet"
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: 0.0.0.0/0
+          Description: "DEMO WEAKNESS - RDP open to the internet"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Default unrestricted outbound"
+      Tags:
+        - Key: Name
+          Value: !Sub "${DemoName}-open-management-sg"
+        - Key: Purpose
+          Value: QualysTotalCloudThailandRegionDemo
+        - Key: DemoMode
+          Value: ThailandRegionInventoryOnly
+
+  ThailandWeakBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${DemoName}-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Purpose
+          Value: QualysTotalCloudThailandRegionDemo
+        - Key: DemoMode
+          Value: ThailandRegionInventoryOnly
+        - Key: Warning
+          Value: IntentionallyWeakNoSensitiveData
+
+Outputs:
+  ThailandRegion:
+    Description: Region where this stack was deployed.
+    Value: !Ref AWS::Region
+
+  ThailandDemoVpc:
+    Description: Demo VPC ID in Thailand region.
+    Value: !Ref ThailandDemoVpc
+
+  ThailandOpenSecurityGroup:
+    Description: Demo security group with intentionally open inbound management ports.
+    Value: !Ref ThailandOpenSecurityGroup
+
+  ThailandWeakBucket:
+    Description: Demo S3 bucket created in Thailand region. Do not upload data.
+    Value: !Ref ThailandWeakBucket
+
