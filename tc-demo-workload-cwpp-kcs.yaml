@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Qualys TotalCloud demo workload for CWPP and KCS. Creates one EC2 Docker host with SSM access and no SSH key requirement.
+
+Parameters:
+  DemoName:
+    Type: String
+    Default: qualys-tc-workload
+    Description: Lowercase prefix for demo resource names.
+    AllowedPattern: "^[a-z][a-z0-9-]{2,40}$"
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select your default VPC or disposable demo VPC.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a public subnet in the selected VPC.
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Description: t3.small is recommended for Docker + Qualys agents. Use t3.micro only for a very short demo.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  DemoInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DemoName}-ssm-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Purpose
+          Value: QualysTotalCloudDemo
+
+  DemoInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${DemoName}-instance-profile"
+      Roles:
+        - !Ref DemoInstanceRole
+
+  DemoSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Qualys TC CWPP/KCS demo host security group
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - Description: Demo HTTP exposure for posture/context only
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: Allow outbound internet for SSM, package install, and Qualys agent communication
+          IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${DemoName}-sg"
+        - Key: Purpose
+          Value: QualysTotalCloudDemo
+
+  DemoInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref DemoInstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref DemoSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 16
+            VolumeType: gp3
+            Encrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DemoName}-ec2-docker-host"
+        - Key: Purpose
+          Value: QualysTotalCloudDemo
+        - Key: QualysDemoModule
+          Value: CWPP-KCS
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          dnf update -y || true
+          dnf install -y httpd docker git jq
+          systemctl enable --now httpd
+          echo "Qualys TotalCloud CWPP/KCS demo host" > /var/www/html/index.html
+          systemctl enable --now docker
+          usermod -aG docker ec2-user || true
+          docker pull nginx:1.14 || true
+          docker run -d --name qualys-demo-nginx -p 8080:80 nginx:1.14 || true
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance ID for CWPP/KCS demo.
+    Value: !Ref DemoInstance
+  InstancePublicIp:
+    Description: Public IP. Avoid browsing if you do not need to demo HTTP exposure.
+    Value: !GetAtt DemoInstance.PublicIp
+  SecurityGroupId:
+    Description: Demo security group ID.
+    Value: !Ref DemoSecurityGroup
+  SsmConnectHint:
+    Description: Use AWS Systems Manager Session Manager to access the instance without SSH.
+    Value: !Sub "AWS Systems Manager > Session Manager > Start session > ${DemoInstance}"
