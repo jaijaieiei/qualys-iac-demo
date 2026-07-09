@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Qualys TotalCloud CWP demo - free-tier friendly EC2 host for Cloud Agent onboarding.
+
+Parameters:
+  DemoName:
+    Type: String
+    Default: qualys-cwp-demo
+    Description: Lowercase prefix for demo resource names.
+    AllowedPattern: "^[a-z][a-z0-9-]{2,40}$"
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select your default VPC.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a subnet in the selected VPC.
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+    Description: Use a free-tier eligible micro instance type.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  CwpDemoRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DemoName}-ssm-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Purpose
+          Value: QualysTotalCloudCwpDemo
+
+  CwpDemoInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${DemoName}-instance-profile"
+      Roles:
+        - !Ref CwpDemoRole
+
+  CwpDemoSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Qualys CWP demo host - no inbound access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: []
+      SecurityGroupEgress:
+        - Description: Allow outbound HTTPS for SSM and Qualys Cloud Agent
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: Allow outbound HTTP for package repositories if needed
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${DemoName}-sg"
+        - Key: Purpose
+          Value: QualysTotalCloudCwpDemo
+
+  CwpDemoInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref CwpDemoInstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref CwpDemoSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DemoName}-ec2-agent-host"
+        - Key: Purpose
+          Value: QualysTotalCloudCwpDemo
+        - Key: QualysDemoModule
+          Value: CWP
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -euxo pipefail
+          dnf install -y jq || true
+          systemctl enable --now amazon-ssm-agent || true
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance ID for Qualys Cloud Agent onboarding.
+    Value: !Ref CwpDemoInstance
+  SsmConnectHint:
+    Description: Connect without SSH.
+    Value: !Sub "AWS Systems Manager > Session Manager > Start session > ${CwpDemoInstance}"
